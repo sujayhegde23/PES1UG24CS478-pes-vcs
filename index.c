@@ -218,18 +218,37 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) return -1;
+    if (!index || !path) return -1;
 
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
 
-    void *data = malloc(st.st_size);
-    fread(data, 1, st.st_size, f);
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        fclose(f);
+        return -1;
+    }
+
+    size_t size = st.st_size;
+
+    void *data = malloc(size ? size : 1);
+    if (!data) {
+        fclose(f);
+        return -1;
+    }
+
+    if (size > 0) {
+        if (fread(data, 1, size, f) != size) {
+            fclose(f);
+            free(data);
+            return -1;
+        }
+    }
+
     fclose(f);
 
     ObjectID id;
-    if (object_write(OBJ_BLOB, data, st.st_size, &id) != 0) {
+    if (object_write(OBJ_BLOB, data, size, &id) != 0) {
         free(data);
         return -1;
     }
@@ -243,11 +262,14 @@ int index_add(Index *index, const char *path) {
         e = &index->entries[index->count++];
     }
 
-    strcpy(e->path, path);
+    strncpy(e->path, path, sizeof(e->path) - 1);
+    e->path[sizeof(e->path) - 1] = '\0';
+
     e->mode = st.st_mode;
     e->mtime_sec = st.st_mtime;
     e->size = st.st_size;
-    e->hash = id;
+
+    memcpy(e->hash.hash, id.hash, HASH_SIZE);
 
     return index_save(index);
 }
