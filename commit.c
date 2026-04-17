@@ -194,23 +194,39 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id) {
-    // Step 1: Build tree from index
+    // Step 1: Build tree
     ObjectID tree_id;
     if (tree_from_index(&tree_id) != 0) return -1;
 
-    // Step 2: Convert tree hash to hex
     char tree_hex[HASH_HEX_SIZE + 1];
     hash_to_hex(&tree_id, tree_hex);
 
-    // Step 3: Create commit content
-    char buffer[1024];
+    // Step 2: Read parent (if exists)
+    char parent_hex[HASH_HEX_SIZE + 1] = {0};
+    FILE *head = fopen(".pes/HEAD", "r");
 
-    snprintf(buffer, sizeof(buffer),
-             "tree %s\n\n%s\n",
-             tree_hex,
-             message);
+    int has_parent = 0;
+    if (head) {
+        if (fscanf(head, "%64s", parent_hex) == 1) {
+            has_parent = 1;
+        }
+        fclose(head);
+    }
 
-    // Step 4: Write commit object
+    // Step 3: Build commit content
+    char buffer[2048];
+
+    if (has_parent) {
+        snprintf(buffer, sizeof(buffer),
+                 "tree %s\nparent %s\n\n%s\n",
+                 tree_hex, parent_hex, message);
+    } else {
+        snprintf(buffer, sizeof(buffer),
+                 "tree %s\n\n%s\n",
+                 tree_hex, message);
+    }
+
+    // Step 4: Store commit
     if (object_write(OBJ_COMMIT, buffer, strlen(buffer), commit_id) != 0)
         return -1;
 
