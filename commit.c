@@ -193,39 +193,61 @@ int head_update(const ObjectID *new_commit) {
 //   - head_update       : moves the branch pointer to your new commit
 //
 // Returns 0 on success, -1 on error.
+
 int commit_create(const char *message, ObjectID *commit_id) {
+    // Step 1: Build tree
     ObjectID tree_id;
     if (tree_from_index(&tree_id) != 0) return -1;
 
     char tree_hex[HASH_HEX_SIZE + 1];
     hash_to_hex(&tree_id, tree_hex);
 
+    // Step 2: Read parent from HEAD
     char parent_hex[HASH_HEX_SIZE + 1] = {0};
-    FILE *head_read = fopen(".pes/HEAD", "r");
-
     int has_parent = 0;
+
+    FILE *head_read = fopen(".pes/HEAD", "r");
     if (head_read) {
         if (fscanf(head_read, "%64s", parent_hex) == 1)
             has_parent = 1;
         fclose(head_read);
     }
 
+    // Step 3: Timestamp
+    time_t now = time(NULL);
+
+    // Step 4: Build commit content
     char buffer[2048];
 
     if (has_parent) {
         snprintf(buffer, sizeof(buffer),
-                 "tree %s\nparent %s\n\n%s\n",
-                 tree_hex, parent_hex, message);
+                 "tree %s\n"
+                 "parent %s\n"
+                 "author Sujay %ld\n"
+                 "committer Sujay %ld\n\n"
+                 "%s\n",
+                 tree_hex,
+                 parent_hex,
+                 now,
+                 now,
+                 message);
     } else {
         snprintf(buffer, sizeof(buffer),
-                 "tree %s\n\n%s\n",
-                 tree_hex, message);
+                 "tree %s\n"
+                 "author Sujay %ld\n"
+                 "committer Sujay %ld\n\n"
+                 "%s\n",
+                 tree_hex,
+                 now,
+                 now,
+                 message);
     }
 
+    // Step 5: Store commit object
     if (object_write(OBJ_COMMIT, buffer, strlen(buffer), commit_id) != 0)
         return -1;
 
-    // 🔥 UPDATE HEAD
+    // Step 6: Update HEAD
     char commit_hex[HASH_HEX_SIZE + 1];
     hash_to_hex(commit_id, commit_hex);
 
