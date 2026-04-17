@@ -115,7 +115,14 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     // Step 4: Copy header and data
     memcpy(buffer, header, header_len);
     memcpy(buffer + header_len, data, len);
+    // Step 5: Compute SHA-256 hash of full object
+ObjectID id;
+compute_hash(buffer, total_len, &id);
 
+// Step 6: Store hash in id_out
+if (id_out) {
+    *id_out = id;
+}
     // NOTE: We are NOT doing hashing or writing yet (next commits)
 
     free(buffer);
