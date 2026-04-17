@@ -94,7 +94,7 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-     // Step 1: Convert type enum to string
+    // Step 1: Convert type to string
     const char *type_str;
     if (type == OBJ_BLOB) type_str = "blob";
     else if (type == OBJ_TREE) type_str = "tree";
@@ -104,29 +104,73 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     // Step 2: Create header "<type> <size>\0"
     char header[64];
     snprintf(header, sizeof(header), "%s %zu", type_str, len);
+    size_t header_len = strlen(header) + 1;
 
-    size_t header_len = strlen(header) + 1; // include '\0'
-
-    // Step 3: Allocate buffer for full object
+    // Step 3: Create full buffer (header + data)
     size_t total_len = header_len + len;
     unsigned char *buffer = malloc(total_len);
     if (!buffer) return -1;
 
-    // Step 4: Copy header and data
     memcpy(buffer, header, header_len);
     memcpy(buffer + header_len, data, len);
-    // Step 5: Compute SHA-256 hash of full object
-ObjectID id;
-compute_hash(buffer, total_len, &id);
 
-// Step 6: Store hash in id_out
-if (id_out) {
-    *id_out = id;
-}
-    // NOTE: We are NOT doing hashing or writing yet (next commits)
+    // Step 4: Compute hash
+    ObjectID id;
+    compute_hash(buffer, total_len, &id);
 
+    if (id_out) {
+        *id_out = id;
+    }
+
+    // Step 5: Deduplication check
+    if (object_exists(&id)) {
+        free(buffer);
+        return 0;
+    }
+
+    // Step 6: Get object path
+    char path[512];
+    object_path(&id, path, sizeof(path));
+
+    // Step 7: Create directory (.pes/objects/XX/)
+    char dir[512];
+    strncpy(dir, path, sizeof(dir));
+    dir[sizeof(dir) - 1] = '\0';
+
+    char *slash = strrchr(dir, '/');
+    if (slash) {
+        *slash = '\0';
+        mkdir(dir, 0755); // ignore error if exists
+    }
+
+    // Step 8: Temp file path
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", path);
+
+    // Step 9: Write to temp file
+    int fd = open(temp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd < 0) {
+        free(buffer);
+        return -1;
+    }
+
+    if (write(fd, buffer, total_len) != (ssize_t)total_len) {
+        close(fd);
+        free(buffer);
+        return -1;
+    }
+
+    fsync(fd);
+    close(fd);
+
+    // Step 10: Atomic rename
+    if (rename(temp_path, path) != 0) {
+        free(buffer);
+        return -1;
+    }
+
+    // Cleanup
     free(buffer);
-
     return 0;
 }
 
